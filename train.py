@@ -94,8 +94,6 @@ print('#training images = %d' % dataset_size)
 
 model = create_model(opt)
 visualizer = Visualizer(opt)
-# fp16 disabled due to CUDA compatibility and missing apex
-model = torch.nn.DataParallel(model, device_ids=opt.gpu_ids)
 optimizer_G, optimizer_D = model.module.optimizer_G, model.module.optimizer_D
 
 total_steps = (start_epoch-1) * dataset_size + epoch_iter
