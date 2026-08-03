@@ -1,121 +1,216 @@
 # Kaggle Notebook 完整训练模板（壁画修复模型）
 
-**复制下面所有代码到 Kaggle Notebook 即可直接运行**
+**复制下面代码块到 Kaggle Notebook 依次运行**
 
 ---
 
-## 第一步：安装依赖
+## 0. 环境与 GPU 说明（必读）
+
+| 项目 | 说明 |
+|------|------|
+| 推荐 GPU | **T4**（Accelerator → GPU T4 x2 或 GPU T4） |
+| 避免 | **P100**：当前 Kaggle 默认 PyTorch 不支持 sm_60，会出现 CUDA capability 警告且可能无法真正用 GPU |
+| Python | 3.10 / 3.12 均可 |
+| 不要加 `--fp16` | 本仓库已禁用 apex AMP；Kaggle 通常也没有 apex |
+
+---
+
+## 1. 克隆 / 上传代码
 
 ```python
+# 方式 A：从 GitHub 克隆（若仓库可访问）
 !git clone https://github.com/nwfnyfgvfir/Mural.git
-!pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-!pip install dominate scipy numpy pillow
-!pip install apex
+%cd Mural
+
+# 方式 B：若你已把代码作为 Dataset 上传，或手动上传到 /kaggle/working/
+# 则把工作目录切到代码根目录，例如：
+# %cd /kaggle/working/Mural
 ```
 
 ---
 
-## 第二步：上传代码和数据集
+## 2. 安装依赖（不要强行装 apex）
 
-1. 上传所有 `.py` 文件到 `/kaggle/working/`
-2. 上传数据集（`Incomplet-mural-data.zip`）到 `/kaggle/input/`
+```python
+!pip install -q dominate scipy pillow
+# pytorch_ssim 若仓库自带目录则无需 pip；否则：
+# !pip install -q pytorch-ssim
+```
+
+> 不要执行 `pip install torch ... cu121` 覆盖 Kaggle 自带 PyTorch（容易和 GPU 不匹配）。  
+> 若必须用 **P100**，再考虑安装支持 sm_60 的旧版 PyTorch（不推荐，优先换 T4）。
 
 ---
 
-## 第三步：启动训练（推荐命令）
+## 3. 准备数据集（最容易出错）
+
+### 3.1 代码要求的目录结构
+
+```text
+<dataroot>/
+  train_A/     # 不完整壁画（输入）
+  train_B/     # 完整壁画（目标），文件名与 train_A 一一对应
+```
+
+本仓库本地结构为：
+
+```text
+datasets/Incomplet-mural-data/seq1/train_A/
+datasets/Incomplet-mural-data/seq1/train_B/
+```
+
+因此 **`--dataroot` 必须指向含有 `train_A` 和 `train_B` 的那一层**，即 `.../seq1`。
+
+### 3.2 在 Notebook 中检查路径（先跑这段）
 
 ```python
+import os
+
+# 常见挂载位置，按你实际上传方式改
+candidates = [
+    "/kaggle/input",
+    "/kaggle/working",
+    "/kaggle/working/Mural",
+    "/kaggle/working/Mural/datasets",
+]
+
+print("=== 搜索 train_A ===")
+for root, dirs, files in os.walk("/kaggle"):
+    if "train_A" in dirs:
+        full = os.path.join(root, "train_A")
+        n = len([f for f in os.listdir(full) if f.lower().endswith((".png", ".jpg", ".jpeg"))])
+        print(f"找到: {full}  (约 {n} 张图)")
+        print(f"  → 建议 dataroot = {root}")
+```
+
+### 3.3 三种常见上传方式
+
+**方式 1：把 `Incomplet-mural-data` 整个打成 Dataset 上传**
+
+Kaggle 会挂到类似：
+
+```text
+/kaggle/input/<你的dataset名>/Incomplet-mural-data/seq1/train_A
+```
+
+或（解压后少一层）：
+
+```text
+/kaggle/input/<你的dataset名>/seq1/train_A
+```
+
+用第 3.2 步搜到的路径设置 `dataroot`。
+
+**方式 2：复制到代码目录下（与本地一致）**
+
+```python
+!mkdir -p /kaggle/working/Mural/datasets
+# 按你实际 input 路径改左边
+!cp -r /kaggle/input/<你的dataset名>/Incomplet-mural-data /kaggle/working/Mural/datasets/
+!ls /kaggle/working/Mural/datasets/Incomplet-mural-data/seq1/train_A | head
+```
+
+然后：
+
+```bash
+--dataroot ./datasets/Incomplet-mural-data/seq1
+```
+
+**方式 3：只上传了 zip，需要解压**
+
+```python
+!unzip -q /kaggle/input/<dataset>/Incomplet-mural-data.zip -d /kaggle/working/Mural/datasets/
+!ls /kaggle/working/Mural/datasets/Incomplet-mural-data/seq1/
+# 应看到 train_A  train_B
+```
+
+### 3.4 最终校验（必须通过再训练）
+
+```python
+import os
+dataroot = "/kaggle/input/你的实际路径/seq1"  # 改成你搜到的
+assert os.path.isdir(os.path.join(dataroot, "train_A")), "缺少 train_A"
+assert os.path.isdir(os.path.join(dataroot, "train_B")), "缺少 train_B"
+print("A:", len(os.listdir(os.path.join(dataroot, "train_A"))))
+print("B:", len(os.listdir(os.path.join(dataroot, "train_B"))))
+print("OK")
+```
+
+---
+
+## 4. 启动训练（不要加 --fp16）
+
+把下面 `DATAROOT` 换成第 3 步校验通过的路径：
+
+```python
+DATAROOT = "/kaggle/input/你的实际路径/seq1"  # 或 ./datasets/Incomplet-mural-data/seq1
+
 !python train.py \
   --name mural_kaggle \
   --netG global_ca_aspp \
-  --dataroot /kaggle/input/Incomplet-mural-data/seq1 \
+  --dataroot {DATAROOT} \
   --label_nc 0 --no_instance \
   --niter 100 --niter_decay 50 \
   --save_epoch_freq 20 \
   --display_freq 50 \
   --print_freq 20 \
   --batchSize 1 \
-  --fp16
+  --loadSize 512 --fineSize 512
 ```
 
----
-
-## 第四步：训练过程中查看进度
+显存不够时：
 
 ```python
-# 查看损失日志
-!tail -f /kaggle/working/checkpoints/mural_kaggle/loss_log.txt
-
-# 查看生成图像
-!ls /kaggle/working/checkpoints/mural_kaggle/web/images/
+!python train.py \
+  --name mural_kaggle \
+  --netG global \
+  --dataroot {DATAROOT} \
+  --label_nc 0 --no_instance \
+  --niter 100 --niter_decay 50 \
+  --save_epoch_freq 20 \
+  --batchSize 1 \
+  --loadSize 512 --fineSize 512
 ```
 
 ---
 
-## 第五步：训练完成后查看权重
+## 5. 训练中查看
 
 ```python
-!ls /kaggle/working/checkpoints/mural_kaggle/
+!tail -n 30 /kaggle/working/Mural/checkpoints/mural_kaggle/loss_log.txt
+!ls /kaggle/working/Mural/checkpoints/mural_kaggle/
 ```
+
+权重在：`checkpoints/mural_kaggle/`（`latest_net_G.pth` 等）。
 
 ---
 
-## 第六步：推理代码（测试训练好的权重）
+## 6. 推理
 
 ```python
 !python test.py \
   --name mural_kaggle \
-  --which_epoch 100 \
+  --which_epoch latest \
   --netG global_ca_aspp \
-  --dataroot /kaggle/input/Incomplet-mural-data/test \
-  --checkpoints_dir /kaggle/working/checkpoints \
+  --dataroot /kaggle/input/你的实际路径/test \
+  --checkpoints_dir ./checkpoints \
   --label_nc 0 --no_instance \
   --how_many 10
 ```
 
----
-
-## 第七步：交互式 UI 测试
-
-```python
-!python test.py \
-  --name mural_kaggle \
-  --which_epoch 100 \
-  --netG global_ca_aspp \
-  --model UIModel \
-  --dataroot /kaggle/input/Incomplet-mural-data/test \
-  --checkpoints_dir /kaggle/working/checkpoints \
-  --label_nc 0 --no_instance
-```
+注意：测试集目录需含 `test_A/`（本仓库 `datasets/Incomplet-mural-data/test/test_A`）。
 
 ---
 
-**完整一键训练命令（推荐直接复制使用）：**
+## 7. 当前报错对照
 
-```python
-!python train.py \
-  --name mural_kaggle \
-  --netG global_ca_aspp \
-  --dataroot /kaggle/input/Incomplet-mural-data/seq1 \
-  --label_nc 0 --no_instance \
-  --niter 100 --niter_decay 50 \
-  --save_epoch_freq 20 \
-  --display_freq 50 \
-  --print_freq 20 \
-  --batchSize 1 \
-  --fp16
-```
+| 报错 | 原因 | 处理 |
+|------|------|------|
+| `fractions has no attribute gcd` | Python 3.9+ 移除 | 使用已修复的 `train.py` |
+| `train_A is not a valid directory` | `dataroot` 指错层 / 未上传数据 | 用第 3 节搜索并校验 |
+| CUDA capability sm_60 | P100 + 新 PyTorch | 换 **T4** GPU |
+| `No module named apex` | 装了 `--fp16` | **不要**加 `--fp16` |
 
 ---
 
-**使用说明**：
-1. 把上面所有代码块**依次复制到 Kaggle Notebook**
-2. 运行后等待训练完成
-3. 训练完成后，权重保存在 `/kaggle/working/checkpoints/mural_kaggle/`
-
-需要我帮你：
-- 添加 TensorBoard 记录
-- 增加多阶段训练（先 512p 再 1024p）
-- 写推理 + UI 的完整脚本
-
-告诉我你的需求。
+**一句话**：先 `find`/`os.walk` 找到真正的 `train_A`，把 `--dataroot` 设成它的**父目录**（`seq1`），再训练。
