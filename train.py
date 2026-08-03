@@ -1,5 +1,7 @@
+from copy import deepcopy
 import time
 import os
+import math
 import numpy as np
 import torch
 from torch.autograd import Variable
@@ -13,6 +15,59 @@ from data.data_loader import CreateDataLoader
 from models.models import create_model
 import util.util as util
 from util.visualizer import Visualizer
+import pytorch_ssim
+
+
+def binary_iou(preds, targets, threshold=0.5, smooth=1e-6):
+    """
+    输入形状: (B, 1, H, W)
+    - preds:    预测边缘图 (B, 1, H, W) ∈ {0,1}
+    - targets:  真实边缘图 (B, 1, H, W) ∈ {0,1}
+    """
+    
+    # 展平张量以简化计算 (B, 1, H, W) -> (B, H*W)
+    preds_flat = preds.view(preds.shape[0], -1)
+    targets_flat = targets.view(targets.shape[0], -1)
+    
+    # 计算交集与并集
+    intersection = (preds_flat * targets_flat).sum(dim=1)  # (B,)
+    union = (preds_flat + targets_flat).sum(dim=1) - intersection  # (B,)
+    
+    # 计算每个样本的IoU并求批次平均
+    iou_per_sample = (intersection + smooth) / (union + smooth)
+    batch_iou = iou_per_sample.mean()  # 标量
+    
+    return batch_iou
+
+
+
+def f1_score(preds, targets, smooth=1e-6):
+    """
+    计算二值边缘图的F1分数
+    输入: 
+        preds   : 预测边缘图 (B, 1, H, W) ∈ {0,1}
+        targets : 真实边缘图 (B, 1, H, W) ∈ {0,1}
+        smooth  : 平滑系数防除零
+    输出: 
+        f1     : 批次平均F1分数 (标量)
+    """
+    # 展平空间维度 (B, 1, H, W) -> (B, H*W)
+    preds_flat = preds.view(preds.size(0), -1)
+    targets_flat = targets.view(targets.size(0), -1)
+    
+    # 计算TP/FP/FN
+    tp = (preds_flat * targets_flat).sum(dim=1)        # 真正例：预测为边缘且正确
+    fp = (preds_flat * (1 - targets_flat)).sum(dim=1)  # 假正例：预测为边缘但错误
+    fn = ((1 - preds_flat) * targets_flat).sum(dim=1)  # 假反例：漏检边缘
+    
+    # 计算Precision与Recall
+    precision = tp / (tp + fp + smooth)
+    recall = tp / (tp + fn + smooth)
+    
+    # 计算F1分数（调和平均）
+    f1_per_sample = 2 * (precision * recall) / (precision + recall + smooth)
+    return f1_per_sample.mean()  # 批次平均
+
 
 opt = TrainOptions().parse()
 iter_path = os.path.join(opt.checkpoints_dir, opt.name, 'iter.txt')
@@ -53,10 +108,12 @@ display_delta = total_steps % opt.display_freq
 print_delta = total_steps % opt.print_freq
 save_delta = total_steps % opt.save_latest_freq
 
+metric_results_list = []
 for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
     epoch_start_time = time.time()
     if epoch != start_epoch:
         epoch_iter = epoch_iter % dataset_size
+    metric_results = {'mse': 0, 'ssims': 0, 'psnr': 0, 'ssim': 0, 'iou': 0, 'iou_sum': 0, 'batch_sizes': 0}
     for i, data in enumerate(dataset, start=epoch_iter):
         if total_steps % opt.print_freq == print_delta:
             iter_start_time = time.time()
@@ -67,8 +124,29 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
         save_fake = total_steps % opt.display_freq == display_delta
 
         ############## Forward Pass ######################
-        losses, generated = model(Variable(data['label']), Variable(data['inst']), 
-            Variable(data['image']), Variable(data['feat']), infer=save_fake)
+        losses, generated, (fake_image, real_image) = model(Variable(data['label']), Variable(data['inst']), 
+            Variable(data['image']), Variable(data['feat']), infer=save_fake, metrics=True)
+
+        # 计算指标
+        fake_image = (fake_image + 1) / 2
+        real_image = (real_image + 1) / 2
+        fake_image_bin = fake_image.mean(dim=1, keepdim=True)
+        fake_image_bin_t = fake_image_bin.clone()
+        fake_image_bin[fake_image_bin_t < 0.5] = 1
+        fake_image_bin[fake_image_bin_t >= 0.5] = 0
+        real_image_bin = real_image.mean(dim=1, keepdim=True)
+        real_image_bin_t = real_image_bin.clone()
+        real_image_bin[real_image_bin_t < 0.5] = 1
+        real_image_bin[real_image_bin_t >= 0.5] = 0
+        batch_mse = ((fake_image - real_image) ** 2).data.mean()
+        metric_results['batch_sizes'] += opt.batchSize
+        metric_results['mse'] += batch_mse * opt.batchSize
+        batch_ssim = pytorch_ssim.ssim(fake_image, real_image).item()
+        metric_results['ssims'] += batch_ssim * opt.batchSize
+        metric_results['psnr'] = 10 * math.log10((1**2) / (metric_results['mse'] / metric_results['batch_sizes']))
+        metric_results['ssim'] = metric_results['ssims'] / metric_results['batch_sizes']
+        metric_results['iou_sum'] += binary_iou(fake_image_bin, real_image_bin).item() * opt.batchSize
+        metric_results['iou'] = metric_results['iou_sum'] / metric_results['batch_sizes']
 
         # sum per device losses
         losses = [ torch.mean(x) if not isinstance(x, int) else x for x in losses ]
@@ -100,7 +178,13 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
         if total_steps % opt.print_freq == print_delta:
             errors = {k: v.data.item() if not isinstance(v, int) else v for k, v in loss_dict.items()}            
             t = (time.time() - iter_start_time) / opt.print_freq
-            visualizer.print_current_errors(epoch, epoch_iter, errors, t)
+            errors_metrics = deepcopy(errors)
+            errors_metrics.update({
+                "PSNR": metric_results['psnr'], 
+                "SSIM": metric_results['ssim'],
+                "IOU":metric_results['iou']
+                })
+            visualizer.print_current_errors(epoch, epoch_iter, errors_metrics, t)
             visualizer.plot_current_errors(errors, total_steps)
             #call(["nvidia-smi", "--format=csv", "--query-gpu=memory.used,memory.free"]) 
 
@@ -119,6 +203,11 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
 
         if epoch_iter >= dataset_size:
             break
+    
+    metric_results_list.append([metric_results['psnr'], metric_results['ssim'], metric_results['iou']])
+    metric_results_list_np = np.array(metric_results_list)
+    metric_path = os.path.join(opt.checkpoints_dir, opt.name, 'metrics.txt')
+    np.savetxt(metric_path, metric_results_list_np, fmt="%.4f")
        
     # end of epoch 
     iter_end_time = time.time()

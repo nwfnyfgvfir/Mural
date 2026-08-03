@@ -1,0 +1,1 @@
+python train.py --label_nc 0 --no_instance --dataroot  ./datasets/Incomplet-mural-data/ --save_epoch_freq 5

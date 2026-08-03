@@ -10,7 +10,8 @@ class BaseOptions():
 
     def initialize(self):    
         # experiment specifics
-        self.parser.add_argument('--name', type=str, default='label2city', help='name of the experiment. It decides where to store samples and models')        
+        # 模型保存路径修改default='unet'
+        self.parser.add_argument('--name', type=str, default='global', help='name of the experiment. It decides where to store samples and models')        
         self.parser.add_argument('--gpu_ids', type=str, default='0', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
         self.parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints', help='models are saved here')
         self.parser.add_argument('--model', type=str, default='pix2pixHD', help='which model to use')
@@ -25,12 +26,12 @@ class BaseOptions():
         self.parser.add_argument('--batchSize', type=int, default=1, help='input batch size')
         self.parser.add_argument('--loadSize', type=int, default=1024, help='scale images to this size')
         self.parser.add_argument('--fineSize', type=int, default=512, help='then crop to this size')
-        self.parser.add_argument('--label_nc', type=int, default=35, help='# of input label channels')
+        self.parser.add_argument('--label_nc', type=int, default=0, help='# of input label channels')
         self.parser.add_argument('--input_nc', type=int, default=3, help='# of input image channels')
         self.parser.add_argument('--output_nc', type=int, default=3, help='# of output image channels')
 
-        # for setting inputs
-        self.parser.add_argument('--dataroot', type=str, default='./datasets/cityscapes/') 
+        # for setting inputs# 输入数据集路径
+        self.parser.add_argument('--dataroot', type=str, default='./datasets/Incomplet-mural-data/test') 
         self.parser.add_argument('--resize_or_crop', type=str, default='scale_width', help='scaling and cropping of images at load time [resize_and_crop|crop|scale_width|scale_width_and_crop]')
         self.parser.add_argument('--serial_batches', action='store_true', help='if true, takes images in order to make batches, otherwise takes them randomly')        
         self.parser.add_argument('--no_flip', action='store_true', help='if specified, do not flip the images for data argumentation') 
@@ -41,7 +42,7 @@ class BaseOptions():
         self.parser.add_argument('--display_winsize', type=int, default=512,  help='display window size')
         self.parser.add_argument('--tf_log', action='store_true', help='if specified, use tensorboard logging. Requires tensorflow installed')
 
-        # for generator
+        # for generator***********修改模型
         self.parser.add_argument('--netG', type=str, default='global', help='selects model to use for netG')
         self.parser.add_argument('--ngf', type=int, default=64, help='# of gen filters in first conv layer')
         self.parser.add_argument('--n_downsample_global', type=int, default=4, help='number of downsampling layers in netG') 
@@ -51,7 +52,7 @@ class BaseOptions():
         self.parser.add_argument('--niter_fix_global', type=int, default=0, help='number of epochs that we only train the outmost local enhancer')        
 
         # for instance-wise features
-        self.parser.add_argument('--no_instance', action='store_true', help='if specified, do *not* add instance map as input')        
+        self.parser.add_argument('--no_instance', action='store_true', default=True, help='if specified, do *not* add instance map as input')        
         self.parser.add_argument('--instance_feat', action='store_true', help='if specified, add encoded instance features as input')
         self.parser.add_argument('--label_feat', action='store_true', help='if specified, add encoded label features as input')        
         self.parser.add_argument('--feat_num', type=int, default=3, help='vector length for encoded features')        
