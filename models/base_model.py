@@ -55,7 +55,12 @@ class BaseModel(torch.nn.Module):
         if not os.path.isfile(save_path):
             print('%s not exists yet!' % save_path)
             if network_label == 'G':
-                raise('Generator must exist!')
+                raise FileNotFoundError(
+                    'Generator weights not found: %s\n'
+                    'From-scratch training: pass --load_pretrain \'\' (empty) and do not use --continue_train.\n'
+                    'Resume/finetune: put *.pth under the path and set --load_pretrain / --continue_train.'
+                    % save_path
+                )
         else:
             #network.load_state_dict(torch.load(save_path))
             try:

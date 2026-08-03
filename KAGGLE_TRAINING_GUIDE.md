@@ -59,6 +59,7 @@ print("train_B exists:", os.path.isdir(os.path.join(p, "train_B")))
   --netG global_ca_aspp \
   --dataroot /kaggle/input/<你的slug>/Incomplet-mural-data/seq1 \
   --label_nc 0 --no_instance \
+  --load_pretrain '' \
   --niter 100 --niter_decay 50 \
   --save_epoch_freq 20 \
   --display_freq 50 \
@@ -67,7 +68,10 @@ print("train_B exists:", os.path.isdir(os.path.join(p, "train_B")))
   --loadSize 512 --fineSize 512
 ```
 
-显存不足改用 `--netG global`。
+- **从零训练**：必须 `--load_pretrain ''`（默认已改为空；旧代码默认 `checkpoints/global` 会炸）
+- **继续训练**：`--continue_train --which_epoch latest`，权重在 `checkpoints/mural_kaggle/`
+- **加载本地已有权重**：上传 `latest_net_G.pth` 等到某目录，再 `--load_pretrain 该目录`
+- 显存不足：改用 `--netG global`
 
 ## 5. 常见错误
 

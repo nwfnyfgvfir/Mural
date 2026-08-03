@@ -13,8 +13,8 @@ class TrainOptions(BaseOptions):
 
         # for training
         self.parser.add_argument('--continue_train', action='store_true', help='continue training: load the latest model')
-        # default=checkpoints/unet
-        self.parser.add_argument('--load_pretrain', type=str, default='checkpoints/global', help='load the pretrained model from the specified location')
+        # 空字符串=从零训练；若要从已有权重初始化，例如 --load_pretrain checkpoints
+        self.parser.add_argument('--load_pretrain', type=str, default='', help='load the pretrained model from the specified location (empty = train from scratch)')
         self.parser.add_argument('--which_epoch', type=str, default='latest', help='which epoch to load? set to latest to use latest cached model')
         self.parser.add_argument('--phase', type=str, default='train', help='train, val, test, etc')
         self.parser.add_argument('--niter', type=int, default=100, help='# of iter at starting learning rate')

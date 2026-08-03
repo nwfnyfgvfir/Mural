@@ -150,6 +150,7 @@ DATAROOT = "/kaggle/input/你的实际路径/seq1"  # 或 ./datasets/Incomplet-m
   --netG global_ca_aspp \
   --dataroot {DATAROOT} \
   --label_nc 0 --no_instance \
+  --load_pretrain '' \
   --niter 100 --niter_decay 50 \
   --save_epoch_freq 20 \
   --display_freq 50 \
@@ -157,6 +158,9 @@ DATAROOT = "/kaggle/input/你的实际路径/seq1"  # 或 ./datasets/Incomplet-m
   --batchSize 1 \
   --loadSize 512 --fineSize 512
 ```
+
+> **必须**加 `--load_pretrain ''`，否则会去找不存在的 `checkpoints/global/latest_net_G.pth` 并报错。  
+> 若要用已有权重微调，把 pth 放到某目录后写 `--load_pretrain /path/to/dir`（目录内需有 `latest_net_G.pth`）。
 
 显存不够时：
 
@@ -166,6 +170,7 @@ DATAROOT = "/kaggle/input/你的实际路径/seq1"  # 或 ./datasets/Incomplet-m
   --netG global \
   --dataroot {DATAROOT} \
   --label_nc 0 --no_instance \
+  --load_pretrain '' \
   --niter 100 --niter_decay 50 \
   --save_epoch_freq 20 \
   --batchSize 1 \
@@ -210,6 +215,7 @@ DATAROOT = "/kaggle/input/你的实际路径/seq1"  # 或 ./datasets/Incomplet-m
 | `train_A is not a valid directory` | `dataroot` 指错层 / 未上传数据 | 用第 3 节搜索并校验 |
 | CUDA capability sm_60 | P100 + 新 PyTorch | 换 **T4** GPU |
 | `No module named apex` | 装了 `--fp16` | **不要**加 `--fp16` |
+| `Generator must exist` / `latest_net_G.pth not exists` | 默认去加载 `checkpoints/global` | 加 `--load_pretrain ''` 从零训 |
 
 ---
 
