@@ -7,6 +7,7 @@
 ## 第一步：安装依赖
 
 ```python
+!git clone https://github.com/nwfnyfgvfir/Mural.git
 !pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 !pip install dominate scipy numpy pillow
 !pip install apex

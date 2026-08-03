@@ -1,14 +1,13 @@
 from copy import deepcopy
 import time
 import os
-import math
 import numpy as np
 import torch
 from torch.autograd import Variable
 from collections import OrderedDict
 from subprocess import call
-import fractions
-def lcm(a,b): return abs(a * b)/fractions.gcd(a,b) if a and b else 0
+import math
+def lcm(a, b): return abs(a * b) // math.gcd(a, b) if a and b else 0
 
 from options.train_options import TrainOptions
 from data.data_loader import CreateDataLoader
@@ -95,12 +94,9 @@ print('#training images = %d' % dataset_size)
 
 model = create_model(opt)
 visualizer = Visualizer(opt)
-if opt.fp16:    
-    from apex import amp
-    model, [optimizer_G, optimizer_D] = amp.initialize(model, [model.optimizer_G, model.optimizer_D], opt_level='O1')             
-    model = torch.nn.DataParallel(model, device_ids=opt.gpu_ids)
-else:
-    optimizer_G, optimizer_D = model.module.optimizer_G, model.module.optimizer_D
+# fp16 disabled due to CUDA compatibility and missing apex
+model = torch.nn.DataParallel(model, device_ids=opt.gpu_ids)
+optimizer_G, optimizer_D = model.module.optimizer_G, model.module.optimizer_D
 
 total_steps = (start_epoch-1) * dataset_size + epoch_iter
 
